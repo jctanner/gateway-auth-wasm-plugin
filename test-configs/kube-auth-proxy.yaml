@@ -1,0 +1,177 @@
+# kube-auth-proxy for BYOIDC WASM Plugin
+# Uses OpenShift OAuth with service-account auto-detection approach
+# Configured for external auth mode (auth-only, no proxy functionality)
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: auth-system
+  labels:
+    app: byoidc-auth
+    component: kube-auth-proxy
+
+---
+
+# Service Account (acts as OAuth client automatically)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-auth-proxy
+  namespace: auth-system
+  labels:
+    app: kube-auth-proxy
+    component: authentication
+  annotations:
+    # OAuth redirect URI annotation - this makes OpenShift automatically create OAuth client
+    serviceaccounts.openshift.io/oauth-redirectreference.kube-auth-proxy: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Service","name":"kube-auth-proxy"}}'
+
+---
+
+
+
+# Secret for cookie encryption
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kube-auth-proxy-secret
+  namespace: auth-system
+  labels:
+    app: kube-auth-proxy
+    component: authentication
+type: Opaque
+stringData:
+  # Generate with: openssl rand -base64 32
+  cookie-secret: "xYBySddkm7FCIGD1HMBGYsDyYNA7JDro1BLqTPhbirU="
+
+---
+
+# kube-auth-proxy Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-auth-proxy
+  namespace: auth-system
+  labels:
+    app: kube-auth-proxy
+    component: authentication
+spec:
+  replicas: 1  # Single replica for development
+  selector:
+    matchLabels:
+      app: kube-auth-proxy
+  template:
+    metadata:
+      labels:
+        app: kube-auth-proxy
+        component: authentication
+    spec:
+      serviceAccountName: kube-auth-proxy
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        # Let OpenShift assign the user ID automatically to comply with SCC
+      containers:
+      - name: kube-auth-proxy
+        image: registry.tannerjc.net/kube-auth-proxy:latest  # Your custom image
+        imagePullPolicy: Always
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        ports:
+        - containerPort: 4180
+          name: http
+          protocol: TCP
+        args:
+        # Minimal working configuration
+        - --provider=openshift
+        - --client-id=system:serviceaccount:auth-system:kube-auth-proxy
+        - --client-secret-file=/var/run/secrets/kubernetes.io/serviceaccount/token
+        - --openshift-service-account=kube-auth-proxy
+        - --https-address=0.0.0.0:4180
+        - --tls-cert-file=/etc/tls/private/tls.crt
+        - --tls-key-file=/etc/tls/private/tls.key
+        - --upstream=static://202
+        - --redirect-url=https://odh-gateway.apps-crc.testing/oauth2/callback
+        - --email-domain=*
+        - --pass-access-token
+        - --pass-user-headers
+        - --set-xauthrequest
+        
+        env:
+        # Only keep the cookie secret as env var (sensitive data)
+        - name: OAUTH2_PROXY_COOKIE_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: cookie-secret
+              name: kube-auth-proxy-secret
+              
+        # Health checks (HTTPS)
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 4180
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: 4180
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 1
+          
+        # Resource limits
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+            
+        # Volume mounts
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: tls-certs
+          mountPath: /etc/tls/private
+          readOnly: true
+          
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: tls-certs
+        secret:
+          secretName: kube-auth-proxy-tls
+          defaultMode: 0400
+
+---
+
+# Service to expose kube-auth-proxy internally
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-auth-proxy
+  namespace: auth-system
+  labels:
+    app: kube-auth-proxy
+    component: authentication
+  annotations:
+    # OpenShift serving certificate annotation - automatically creates TLS secret
+    service.beta.openshift.io/serving-cert-secret-name: kube-auth-proxy-tls
+spec:
+  selector:
+    app: kube-auth-proxy
+  ports:
+  - name: https
+    port: 4180      # WASM plugin will connect to this port over HTTPS
+    targetPort: 4180
+    protocol: TCP
+  type: ClusterIP   # Internal service only - no external access needed
