@@ -1,0 +1,45 @@
+# Docker build context exclusions for BYOIDC WASM Plugin
+
+# Rust build artifacts (regenerated during build)
+target/
+debug/
+
+# Git files
+.git/
+.gitignore
+
+# Documentation and examples (not needed for runtime)
+DESIGN_DOC.md
+README.md
+test-configs/
+test-docs/
+src.examples/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Development and testing artifacts
+.env
+.env.local
+.env.*.local
+
+# Package manager files (copied separately for caching)
+# Cargo.toml and Cargo.lock are copied explicitly in Dockerfile
