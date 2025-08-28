@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: odh-gateway-route
+  namespace: openshift-ingress  # Same namespace as the gateway
+spec:
+  host: odh-gateway.apps-crc.testing  # Update this to match your cluster domain
+  to:
+    kind: Service
+    name: odh-gateway-odh-gatewayclass  # This should match the actual service created by the gateway controller
+    weight: 100
+  port:
+    targetPort: https  # Use named port instead of 443
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: Redirect

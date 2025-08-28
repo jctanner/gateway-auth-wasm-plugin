@@ -1,0 +1,39 @@
+# OpenShift Gateway API - GatewayClass and Gateway for ODH
+# This follows the exact OpenShift documentation requirements
+
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: odh-gatewayclass
+spec:
+  controllerName: openshift.io/gateway-controller/v1  # OpenShift-specific controller
+
+---
+
+# Gateway must be created in openshift-ingress namespace per OpenShift documentation
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: odh-gateway
+  namespace: openshift-ingress  # Required by OpenShift
+spec:
+  gatewayClassName: odh-gatewayclass  # Must match the GatewayClass name
+  listeners:
+  - name: https
+    port: 443
+    protocol: HTTPS
+    # hostname: "*"  # Accept any hostname, or specify your actual domain
+    allowedRoutes:
+      namespaces:
+        from: All  # Allow HTTPRoutes from any namespace to attach
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - name: gwapi-wildcard  # TLS secret name - create this first
+  - name: http
+    port: 80
+    protocol: HTTP
+    # hostname: "*"  # Accept any hostname, or specify your actual domain
+    allowedRoutes:
+      namespaces:
+        from: All  # Allow HTTPRoutes from any namespace to attach

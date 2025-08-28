@@ -1,0 +1,78 @@
+# Echo service deployment and HTTPRoute for testing ODH Gateway
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: echo-service
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo-service
+  namespace: echo-service
+  labels:
+    app: echo-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: echo-service
+  template:
+    metadata:
+      labels:
+        app: echo-service
+    spec:
+      containers:
+      - name: echo-server
+        image: registry.tannerjc.net/echo-server:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo-service
+  namespace: echo-service
+  labels:
+    app: echo-service
+spec:
+  selector:
+    app: echo-service
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+
+---
+
+# HTTPRoute that sends all traffic from ODH Gateway to the echo service
+# Lives in same namespace as the service - cleaner RBAC and service ownership
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-route
+  namespace: echo-service
+spec:
+  parentRefs:
+  - name: odh-gateway
+    namespace: openshift-ingress  # Cross-namespace reference to Gateway
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: "/"  # All traffic
+    backendRefs:
+    - name: echo-service
+      port: 80
+      # No namespace needed - same namespace as HTTPRoute
