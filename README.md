@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo-small.png" alt="BYOIDC WASM Plugin Logo">
+  <img src="assets/logo-small.png" alt="BYOIDC WASM Plugin Logo" height="150">
 </p>
 
 # BYOIDC WASM Plugin
