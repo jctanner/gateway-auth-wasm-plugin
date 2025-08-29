@@ -6,7 +6,7 @@
 
 **Bring Your Own Identity and Access (BYOIDC)** - A WebAssembly plugin for OpenShift Gateway API that integrates with existing OAuth/OIDC authentication services.
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPL-blue.svg)](LICENSE)
 [![OpenShift](https://img.shields.io/badge/OpenShift-4.19+-red.svg)](https://docs.openshift.com/)
 [![Gateway API](https://img.shields.io/badge/Gateway%20API-v1-green.svg)](https://gateway-api.sigs.k8s.io/)
 
@@ -14,13 +14,13 @@
 
 This WASM plugin enables **session-based authentication** for OpenShift Gateway API by integrating with existing authentication services like [kube-auth-proxy](https://github.com/opendatahub-io/kube-auth-proxy/). Instead of replacing your proven authentication logic, it acts as a transparent bridge that forwards requests and handles OAuth flows.
 
-### Key Benefits
+### What it does
 
-- ✅ **Preserve existing auth investments** - Reuse working OAuth/OIDC services
-- ✅ **Gateway API native** - Standard Kubernetes resources, no vendor lock-in
-- ✅ **Session-based authentication** - Cookie-based user sessions with OAuth flows  
-- ✅ **Production ready** - Used in OpenShift Data Hub and Red Hat OpenShift AI
-- ✅ **No service mesh complexity** - Uses only WASM capabilities, not full mesh features
+- **Reuses your existing auth services** - Works with kube-auth-proxy, oauth2-proxy, or anything that implements ext_authz endpoints
+- **Standard Gateway API integration** - No vendor-specific extensions or custom resources
+- **Session-based authentication** - Users log in once, get cookies, subsequent requests just work  
+- **Actually works in production** - Running in OpenShift Data Hub and Red Hat OpenShift AI
+- **Minimal complexity** - Just the WASM plugin capabilities, no full service mesh required
 
 ## How It Works
 
@@ -118,27 +118,27 @@ spec:
 
 | Service | Description | Status |
 |---------|-------------|--------|
-| **[kube-auth-proxy](https://github.com/opendatahub-io/kube-auth-proxy/)** | FIPS-compliant OAuth proxy for OpenShift Data Hub | ✅ Primary |
-| **oauth2-proxy** | OAuth2 proxy for cloud identity providers | ✅ Compatible |
-| **Custom ext_authz services** | Any service implementing ext_authz `/oauth2/auth` endpoint | ✅ Compatible |
+| **[kube-auth-proxy](https://github.com/opendatahub-io/kube-auth-proxy/)** | FIPS-compliant OAuth proxy for OpenShift Data Hub | Primary |
+| **oauth2-proxy** | OAuth2 proxy for cloud identity providers | Compatible |
+| **Custom ext_authz services** | Any service implementing ext_authz `/oauth2/auth` endpoint | Compatible |
 
 ## Compatibility
 
 ### OpenShift Versions
-- ✅ **OpenShift 4.19** - Primary development and testing platform
-- ✅ **OpenShift 4.18** - Compatible
-- 🔄 **OpenShift 4.20** - Validation in progress
+- **OpenShift 4.19** - Primary development and testing platform
+- **OpenShift 4.18** - Compatible
+- **OpenShift 4.20** - Validation in progress
 
 ### Authentication Providers  
-- ✅ **OpenShift OAuth** - Native OpenShift authentication
-- ✅ **Google OAuth** - Google identity provider
-- ✅ **Azure AD** - Microsoft Azure Active Directory  
-- ✅ **Keycloak/Red Hat SSO** - Enterprise identity management
-- ✅ **Generic OIDC** - Any OpenID Connect compliant provider
+- **OpenShift OAuth** - Native OpenShift authentication
+- **Google OAuth** - Google identity provider
+- **Azure AD** - Microsoft Azure Active Directory  
+- **Keycloak/Red Hat SSO** - Enterprise identity management
+- **Generic OIDC** - Any OpenID Connect compliant provider
 
 ## Build Requirements
 
-**Critical for Red Hat Service Mesh compatibility:**
+**For Red Hat Service Mesh compatibility:**
 
 ```dockerfile
 # Required Rust toolchain
@@ -164,9 +164,9 @@ See **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** for complete build requir
 - CRC (CodeReady Containers) development environments
 
 **Test Coverage:**
-- ✅ Unit tests (Rust)
-- ✅ Integration tests (Browser-based OAuth flow validation)
-- ✅ End-to-end testing (Complete authentication cycle)
+- Unit tests (Rust)
+- Integration tests (Browser-based OAuth flow validation)
+- End-to-end testing (Complete authentication cycle)
 
 ## Contributing
 
@@ -199,7 +199,7 @@ make deploy
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GPL - see the [LICENSE](LICENSE) file for details.
 
 ## Related Projects
 

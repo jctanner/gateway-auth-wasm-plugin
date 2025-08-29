@@ -636,7 +636,7 @@ byoidc-wasm-plugin/
 ├── Cargo.lock                     # Dependency lockfile (committed)
 ├── Makefile                       # Build automation and common tasks
 ├── Dockerfile                     # Multi-stage OCI image build with compatibility labels
-├── LICENSE                        # Project license (Apache 2.0)
+├── LICENSE                        # Project license (GPL)
 ├── DESIGN_DOC.md                  # This document - complete design specification
 ├── docs/                          # Detailed technical documentation
 │
