@@ -1,11 +1,12 @@
 # kube-auth-proxy for BYOIDC WASM Plugin
 # Uses OpenShift OAuth with service-account auto-detection approach
 # Configured for external auth mode (auth-only, no proxy functionality)
+# Updated: HTTP-only mode with skip-provider-button for direct OAuth redirects
 
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: auth-system
+  name: openshift-ingress
   labels:
     app: byoidc-auth
     component: kube-auth-proxy
@@ -17,7 +18,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kube-auth-proxy
-  namespace: auth-system
+  namespace: openshift-ingress
   labels:
     app: kube-auth-proxy
     component: authentication
@@ -34,7 +35,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: kube-auth-proxy-secret
-  namespace: auth-system
+  namespace: openshift-ingress
   labels:
     app: kube-auth-proxy
     component: authentication
@@ -50,7 +51,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kube-auth-proxy
-  namespace: auth-system
+  namespace: openshift-ingress
   labels:
     app: kube-auth-proxy
     component: authentication
@@ -82,24 +83,23 @@ spec:
           capabilities:
             drop: ["ALL"]
         ports:
-        - containerPort: 4180
+        - containerPort: 8080
           name: http
           protocol: TCP
         args:
-        # Minimal working configuration
+        # HTTP-only configuration with skip-provider-button for direct OAuth redirects
         - --provider=openshift
         - --client-id=system:serviceaccount:auth-system:kube-auth-proxy
         - --client-secret-file=/var/run/secrets/kubernetes.io/serviceaccount/token
         - --openshift-service-account=kube-auth-proxy
-        - --https-address=0.0.0.0:4180
-        - --tls-cert-file=/etc/tls/private/tls.crt
-        - --tls-key-file=/etc/tls/private/tls.key
+        - --http-address=0.0.0.0:8080
         - --upstream=static://202
         - --redirect-url=https://odh-gateway.apps-crc.testing/oauth2/callback
         - --email-domain=*
         - --pass-access-token
         - --pass-user-headers
         - --set-xauthrequest
+        - --skip-provider-button
         
         env:
         # Only keep the cookie secret as env var (sensitive data)
@@ -109,20 +109,20 @@ spec:
               key: cookie-secret
               name: kube-auth-proxy-secret
               
-        # Health checks (HTTPS)
+        # Health checks (HTTP)
         livenessProbe:
           httpGet:
             path: /ping
-            port: 4180
-            scheme: HTTPS
+            port: 8080
+            scheme: HTTP
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
         readinessProbe:
           httpGet:
             path: /ping
-            port: 4180
-            scheme: HTTPS
+            port: 8080
+            scheme: HTTP
           initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 1
@@ -136,21 +136,14 @@ spec:
             cpu: 500m
             memory: 256Mi
             
-        # Volume mounts
+        # Volume mounts (HTTP-only, no TLS certs needed)
         volumeMounts:
         - name: tmp
           mountPath: /tmp
-        - name: tls-certs
-          mountPath: /etc/tls/private
-          readOnly: true
           
       volumes:
       - name: tmp
         emptyDir: {}
-      - name: tls-certs
-        secret:
-          secretName: kube-auth-proxy-tls
-          defaultMode: 0400
 
 ---
 
@@ -159,19 +152,16 @@ apiVersion: v1
 kind: Service
 metadata:
   name: kube-auth-proxy
-  namespace: auth-system
+  namespace: openshift-ingress
   labels:
     app: kube-auth-proxy
     component: authentication
-  annotations:
-    # OpenShift serving certificate annotation - automatically creates TLS secret
-    service.beta.openshift.io/serving-cert-secret-name: kube-auth-proxy-tls
 spec:
   selector:
     app: kube-auth-proxy
   ports:
-  - name: https
-    port: 4180      # WASM plugin will connect to this port over HTTPS
-    targetPort: 4180
+  - name: http
+    port: 8080      # WASM plugin will connect to this port over HTTP
+    targetPort: 8080
     protocol: TCP
   type: ClusterIP   # Internal service only - no external access needed

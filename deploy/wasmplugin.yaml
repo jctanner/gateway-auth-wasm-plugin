@@ -1,0 +1,21 @@
+apiVersion: extensions.istio.io/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: gateway-auth-wasm-plugin
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  phase: AUTHN
+  priority: 1000
+  url: oci://registry.tannerjc.net/gateway-auth-wasm-plugin:latest
+  pluginConfig:
+    auth_service:
+      endpoint: "https://kube-auth-proxy.auth-system.svc.cluster.local:4180"
+      verify_path: "/auth"
+      timeout: 5000
+      tls:
+        verify_cert: false
+    global_auth:
+      enabled: true
