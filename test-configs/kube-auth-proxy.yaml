@@ -89,7 +89,7 @@ spec:
         args:
         # HTTP-only configuration with skip-provider-button for direct OAuth redirects
         - --provider=openshift
-        - --client-id=system:serviceaccount:auth-system:kube-auth-proxy
+        - --client-id=kube-auth-proxy-openshift-ingress
         - --client-secret-file=/var/run/secrets/kubernetes.io/serviceaccount/token
         - --openshift-service-account=kube-auth-proxy
         - --http-address=0.0.0.0:8080
