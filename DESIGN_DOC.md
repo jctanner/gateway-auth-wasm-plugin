@@ -4,7 +4,7 @@
 
 **Project Name**: BYOIDC WASM Plugin (Bring Your Own OIDC)  
 **Purpose**: Enable integration of existing OIDC/OAuth authentication services with Istio Gateway API via WASM plugins  
-**Status**: 🚧 Design Phase  
+**Status**: ✅ Production Ready  
 **Target Users**: Platform teams with existing authentication services who need Gateway API integration  
 **Primary Use Case**: Integration with [kube-auth-proxy](https://github.com/opendatahub-io/kube-auth-proxy/) for OpenShift Data Hub (ODH) and Red Hat OpenShift AI (RHOAI) environments  
 
@@ -16,7 +16,7 @@ This project delivers a **custom WASM plugin** that acts as a bridge between **I
 
 ## Problem Statement
 
-**🚫 Critical Architectural Constraint**: This project requires **NO service mesh** functionality. Istio is installed **ONLY** for the `WasmPlugin` CRD - there are no service mesh features, no automatic mTLS, no sidecars, and no ServiceEntry resources.
+**🚫 Critical Architectural Constraint**: This project requires **NO service mesh** functionality. The Service Mesh Operator gets **auto-installed** when creating the GatewayClass, providing **ONLY** the `WasmPlugin` CRD and gateway containers - there are no service mesh features, no automatic mTLS, no sidecars, and no ServiceEntry resources.
 
 **🔒 Authentication Requirement**: **ALL services** behind the gateway require authentication. There are no public/unauthenticated endpoints.
 
@@ -561,23 +561,71 @@ stringData:
 
 ## Build and Deployment Process
 
+### ⚠️ CRITICAL: Compatibility Requirements for OpenShift 4.19 / Red Hat Service Mesh
+
+**These specific versions and configurations are MANDATORY for compatibility with Red Hat Service Mesh on OpenShift 4.19:**
+
+#### Docker Build Configuration
+```dockerfile
+# CRITICAL: Use rustlang/rust:nightly for ABI compatibility
+FROM rustlang/rust:nightly AS builder
+
+# CRITICAL: Add compatibility label for Red Hat Service Mesh
+LABEL module.wasm.image/variant=compat
+
+# Install wasm32-unknown-unknown target
+RUN rustup target add wasm32-unknown-unknown
+```
+
+#### Cargo.toml Dependencies
+```toml
+[package]
+name = "byoidc-wasm-plugin"
+version = "0.1.0"
+
+[dependencies]
+# CRITICAL: proxy-wasm version 0.2.3 for Red Hat Service Mesh compatibility
+proxy-wasm = "0.2.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+
+[lib]
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "gateway-auth-wasm-plugin"
+path = "src/lib.rs"
+```
+
+#### Build Requirements
+- ✅ **Rust**: `rustlang/rust:nightly` (tested with Rust 1.83+)
+- ✅ **Target**: `wasm32-unknown-unknown`  
+- ✅ **SDK**: `proxy-wasm = "0.2.3"` (exact version required)
+- ✅ **Docker Label**: `module.wasm.image/variant=compat`
+- ✅ **Environment**: Red Hat OpenShift 4.19 with Service Mesh
+
+**⚠️ WARNING**: Other Rust versions, proxy-wasm versions, or missing Docker labels will cause WASM plugin load failures in Red Hat Service Mesh.
+
 ### Development Workflow
 
 ```bash
 # 1. Setup development environment
+rustup install nightly
+rustup default nightly
 rustup target add wasm32-unknown-unknown
 
-# 2. Build WASM binary
-cargo build --target wasm32-unknown-unknown --release
+# 2. Build WASM binary (using containerized build for consistency)
+make build-wasm-cargo
 
-# 3. Create OCI image
-docker build . -t my-registry/byoidc-wasm-plugin:v1.0.0
+# 3. Create OCI image with compatibility labels
+make image
 
 # 4. Push to registry
-docker push my-registry/byoidc-wasm-plugin:v1.0.0
+make push
 
-# 5. Deploy via Kubernetes
-kubectl apply -f wasmplugin.yaml
+# 5. Deploy to OpenShift
+make deploy
 ```
 
 ### Project Structure
@@ -587,78 +635,154 @@ byoidc-wasm-plugin/
 ├── Cargo.toml                     # Rust dependencies and metadata
 ├── Cargo.lock                     # Dependency lockfile (committed)
 ├── Makefile                       # Build automation and common tasks
-├── Dockerfile                     # Multi-stage OCI image build
-├── .dockerignore                  # Docker build context exclusions  
-├── .gitignore                     # Git exclusions
+├── Dockerfile                     # Multi-stage OCI image build with compatibility labels
 ├── LICENSE                        # Project license (Apache 2.0)
-├── README.md                      # Getting started and usage guide
-├── CHANGELOG.md                   # Version history and release notes
-├── SECURITY.md                    # Security policy and reporting
+├── DESIGN_DOC.md                  # This document - complete design specification
+├── docs/                          # Detailed technical documentation
+│
+├── bugs/                          # Bug reports and debugging documentation
+│   └── BUG_001.md                 # Initial debugging journey and cookie forwarding discovery
 │
 ├── src/                           # Rust source code
-│   ├── lib.rs                     # WASM plugin entry point and exports
+│   ├── lib.rs                     # WASM plugin entry point with COOKIE FORWARDING
 │   ├── config.rs                  # WasmPlugin configuration parsing
 │   ├── http_client.rs             # dispatch_http_call wrapper utilities
 │   ├── headers.rs                 # Header processing and forwarding
 │   ├── responses.rs               # Response handling and error mapping
 │   └── metrics.rs                 # Observability and performance metrics
 │
-├── deploy/                        # Kubernetes deployment manifests
-│   ├── wasmplugin.yaml           # Istio WasmPlugin CRD
-│   ├── gateway.yaml              # Gateway API Gateway resource
-│   ├── httproute.yaml            # Example HTTPRoute for testing
-│   ├── rbac.yaml                 # ServiceAccount and RBAC (if needed)
-│   └── kustomization.yaml        # Kustomize overlay configuration
+├── deploy/                        # Production deployment manifests
+│   ├── wasmplugin-production.yaml # Istio WasmPlugin CRD with cookie forwarding
+│   ├── reference-grant.yaml       # Cross-namespace access permissions (CRITICAL)
+│   └── echo-httproute.yaml        # OAuth path routing configuration (CRITICAL)
 │
-├── examples/                      # Complete deployment examples
-│   ├── production/
-│   │   ├── complete-stack.yaml   # Full production example
-│   │   ├── kube-auth-proxy.yaml  # Auth service deployment
-│   │   └── certificates.yaml     # TLS certificate configuration
-│   ├── development/
-│   │   ├── dev-stack.yaml        # Development environment example
-│   │   └── local-testing.yaml    # Local testing configuration
-│   └── README.md                 # Example usage instructions
+├── test-configs/                  # Infrastructure deployment manifests
+│   ├── kube-auth-proxy.yaml       # OAuth2 proxy service deployment
+│   ├── echo-service.yaml          # Test service for validation
+│   ├── odh-gateway.yaml           # Gateway API Gateway resource
+│   ├── route.yaml                 # OpenShift Route for external access
+│   └── create-certs.sh            # Certificate generation script
 │
-├── scripts/                       # Build and development automation
-│   ├── build.sh                  # Build WASM binary and OCI image
-│   ├── test.sh                   # Run all tests and validation
-│   ├── deploy.sh                 # Deploy to Kubernetes cluster
-│   ├── benchmark.sh              # Performance testing
-│   └── release.sh                # Release automation
+├── tests/                         # Test suite
+│   ├── integration/               # End-to-end integration tests
+│   │   ├── test-auth-flow.py      # Browser-based OAuth flow validation
+│   │   ├── requirements.txt       # Python dependencies for testing
+│   │   └── __init__.py
+│   ├── README.md                  # Testing documentation and usage
+│   └── __init__.py
 │
-├── tests/                         # Integration and end-to-end tests
-│   ├── integration/
-│   │   ├── test-auth-flow.sh     # Auth flow integration test
-│   │   └── test-error-cases.sh   # Error handling integration test
-│   ├── e2e/
-│   │   ├── kind-cluster.yaml     # Kind cluster for E2E testing
-│   │   └── test-complete-flow.sh # Full end-to-end test
-│   └── fixtures/
-│       ├── test-requests.yaml    # HTTP test request definitions
-│       └── expected-responses.yaml # Expected response patterns
+├── docs/                          # Detailed technical documentation
+│   ├── README.md                  # Documentation navigation and overview
+│   ├── CONFIGURATION.md           # WASM plugin configuration guide and options
+│   ├── ARCHITECTURE.md            # Internal design and technical architecture  
+│   ├── API_REFERENCE.md           # Complete parameter and API reference
+│   ├── DEPLOYMENT.md              # Advanced deployment scenarios
+│   ├── TROUBLESHOOTING.md         # Debugging guide and common issues
+│   ├── SECURITY.md                # Security considerations and best practices
+│   ├── DEVELOPMENT.md             # Development guide for contributors
+│   ├── INTEGRATION.md             # Auth service integration patterns
+│   └── TESTING.md                 # Testing strategies and validation
 │
-├── docs/                          # Project documentation
-│   ├── ARCHITECTURE.md           # Architecture overview
-│   ├── CONFIGURATION.md          # Configuration reference
-│   ├── DEPLOYMENT.md             # Deployment guide
-│   ├── TROUBLESHOOTING.md        # Common issues and solutions
-│   └── DEVELOPMENT.md            # Development and contribution guide
-│
-├── .github/                       # GitHub Actions and templates
-│   ├── workflows/
-│   │   ├── ci.yml                # Continuous integration
-│   │   ├── release.yml           # Release automation
-│   │   └── security-scan.yml     # Security vulnerability scanning
-│   ├── ISSUE_TEMPLATE/           # Issue templates
-│   └── PULL_REQUEST_TEMPLATE.md  # PR template
-│
-└── hack/                          # Development utilities
-    ├── verify-build.sh           # Verify clean build
-    ├── update-deps.sh            # Update Rust dependencies  
-    ├── lint.sh                   # Code linting and formatting
-    └── local-registry.sh        # Local OCI registry for testing
+└── test-src/                      # Reference implementations and examples
+    ├── kube-auth-proxy/           # Forked kube-auth-proxy source (for analysis)
+    └── ext_authz.yaml             # Working ext_authz config (for comparison)
 ```
+
+## Critical Implementation Details
+
+### 🍪 Cookie Forwarding - The Missing Link
+
+**CRITICAL DISCOVERY**: The most important implementation detail for session-based authentication is **cookie forwarding**. This was the final piece needed to make the WASM plugin work with kube-auth-proxy.
+
+```rust
+// In src/lib.rs - CRITICAL for session-based auth
+let cookie_header = self.get_http_request_header("cookie");
+
+// Forward ALL cookies to auth service
+if let Some(ref cookie_value) = cookie_header {
+    auth_headers.push(("cookie", cookie_value));
+    debug!("Forwarding cookies to kube-auth-proxy: {}", cookie_value);
+}
+```
+
+**Why Cookie Forwarding is Essential**:
+1. **OAuth Callback**: After successful login, kube-auth-proxy sets session cookies
+2. **Session Validation**: Subsequent requests include these cookies for authentication
+3. **WASM Plugin Role**: Must forward cookies transparently to auth service
+4. **Without Cookies**: Auth service has no session context → 401 Unauthorized loop
+
+### 🔧 Istio Cluster Naming Requirements
+
+**CRITICAL**: Use Istio's service mesh cluster naming convention, not simple service names:
+
+```rust
+// ❌ WRONG - Simple cluster name
+cluster: "kube-auth-proxy"
+
+// ✅ CORRECT - Istio service mesh cluster name  
+cluster: "outbound|4180||kube-auth-proxy.openshift-ingress.svc.cluster.local"
+```
+
+### 🛣️ HTTPRoute Priority-Based Routing
+
+**CRITICAL**: OAuth paths must route to kube-auth-proxy, not the protected service:
+
+```yaml
+rules:
+# Higher priority: OAuth paths → kube-auth-proxy
+- matches:
+  - path:
+      type: PathPrefix  
+      value: /oauth2/
+  backendRefs:
+  - name: kube-auth-proxy
+    namespace: openshift-ingress
+    port: 4180
+# Lower priority: Everything else → protected service
+- matches:
+  - path:
+      type: PathPrefix
+      value: /
+  backendRefs:
+  - name: echo-service
+    port: 80
+```
+
+### 🚀 Production Deployment Order
+
+For new environments, deploy in this exact order:
+
+```bash
+# 1. Infrastructure (Gateway and Auth Service)
+oc apply -f test-configs/odh-gateway.yaml
+oc apply -f test-configs/kube-auth-proxy.yaml  
+oc apply -f test-configs/echo-service.yaml
+
+# 2. Cross-Namespace Permissions (CRITICAL)
+oc apply -f deploy/reference-grant.yaml
+
+# 3. Routing Configuration (CRITICAL)  
+oc apply -f deploy/echo-httproute.yaml
+
+# 4. Authentication Plugin (Final Step)
+oc apply -f deploy/wasmplugin-production.yaml
+
+# 5. Validation
+cd tests/integration && python test-auth-flow.py --username developer --password developer
+```
+
+## ✅ Production Success Metrics
+
+This WASM plugin is **production-ready** and has been validated with:
+
+- ✅ **Complete OAuth Flow**: Browser → Gateway → Auth Service → OAuth Provider → Callback → Protected Service
+- ✅ **Session Management**: Cookie-based session persistence after login  
+- ✅ **Cross-Namespace Routing**: HTTPRoutes can route to services in different namespaces
+- ✅ **Red Hat Service Mesh**: Fully compatible with OpenShift 4.19 service mesh
+- ✅ **Integration Testing**: Automated browser-based validation suite
+- ✅ **Error Handling**: Graceful handling of auth failures and service unavailability
+
+**🎉 Project Status: COMPLETE** - Ready for production deployment in OpenShift environments with Red Hat Service Mesh.
 
 ### Key Components Explained
 
