@@ -1,3 +1,7 @@
+# Gateway Auth WASM Plugin - Standard Istio Deployment
+# NOTE: This is for standard Istio environments. For OpenShift, use wasmplugin-production.yaml
+# Updated to match current working configuration
+
 apiVersion: extensions.istio.io/v1alpha1
 kind: WasmPlugin
 metadata:
@@ -12,7 +16,8 @@ spec:
   url: oci://registry.tannerjc.net/gateway-auth-wasm-plugin:latest
   pluginConfig:
     auth_service:
-      endpoint: "https://kube-auth-proxy.auth-system.svc.cluster.local:4180"
+      endpoint: "http://kube-auth-proxy.auth-system.svc.cluster.local:8080"
+      cluster: "outbound|8080||kube-auth-proxy.auth-system.svc.cluster.local"
       verify_path: "/auth"
       timeout: 5000
       tls:
