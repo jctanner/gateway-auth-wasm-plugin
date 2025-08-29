@@ -36,18 +36,24 @@ impl RootContext for AuthProxyRoot {
 
         match self.get_plugin_configuration() {
             Some(config_bytes) => {
-                match serde_json::from_slice::<PluginConfig>(&config_bytes) {
-                    Ok(config) => {
-                        info!("BYOIDC Plugin configured successfully");
-                        info!("Auth service endpoint: {}", config.auth_service.endpoint);
-                        self.config = Some(config);
-                        true
-                    }
-                    Err(e) => {
-                        error!("Failed to parse plugin configuration: {}", e);
-                        false
-                    }
+                            match serde_json::from_slice::<PluginConfig>(&config_bytes) {
+                Ok(config) => {
+                    info!("✅ BYOIDC Plugin configured successfully");
+                    info!("   Auth service endpoint: {}", config.auth_service.endpoint);
+                    info!("   Auth service cluster: {}", config.auth_service.cluster);
+                    info!("   Auth service verify_path: {}", config.auth_service.verify_path);
+                    info!("   Auth service timeout: {} ms", config.auth_service.timeout);
+                    info!("   Global auth enabled: {}", config.global_auth.enabled);
+                    self.config = Some(config);
+                    true
                 }
+                Err(e) => {
+                    error!("❌ Failed to parse plugin configuration: {}", e);
+                    error!("   Raw config bytes (first 200 chars): {}", 
+                           String::from_utf8_lossy(&config_bytes[..std::cmp::min(200, config_bytes.len())]));
+                    false
+                }
+            }
             }
             None => {
                 error!("Plugin configuration is empty");
@@ -90,13 +96,14 @@ impl AuthProxy {
         }
     }
 
-    fn is_auth_request(&self) -> bool {
-        if let Some(path) = self.get_http_request_header(":path") {
-            path.starts_with(&self.config.auth_service.verify_path)
-        } else {
-            false
+            fn is_auth_request(&self) -> bool {
+            if let Some(path) = self.get_http_request_header(":path") {
+                // Skip authentication for ALL OAuth-related paths
+                path.starts_with("/oauth2/") || path.starts_with(&self.config.auth_service.verify_path)
+            } else {
+                false
+            }
         }
-    }
 
     fn extract_authorization_header(&self) -> Option<String> {
         self.get_http_request_header("authorization")
@@ -144,10 +151,23 @@ impl Context for AuthProxy {
                 self.send_http_response(status_code as u32, vec![("content-type", "application/json")], Some(message.as_bytes()));
             }
             AuthAction::Redirect(url) => {
-                info!("kube-auth-proxy requesting redirect to: {}", url);
-                // Extract the actual redirect location from auth service response headers
-                let redirect_url = self.get_http_call_response_header("location").unwrap_or(url);
-                debug!("Forwarding redirect to client: {}", redirect_url);
+                info!("Authentication needed - redirecting to OAuth start");
+                
+                // Build the OAuth start URL using the original request host
+                let redirect_url = if url.starts_with("/oauth2/start") {
+                    // Relative URL - construct full OAuth start URL
+                    let original_host = self.get_http_request_header(":authority")
+                        .unwrap_or("odh-gateway.apps-crc.testing".to_string());
+                    format!("https://{}/oauth2/start", original_host)
+                } else if url == "sign-in-page" {
+                    // Handle 403 response from kube-auth-proxy - forward the location header
+                    self.get_http_call_response_header("location").unwrap_or("/oauth2/start".to_string())
+                } else {
+                    // Direct URL from kube-auth-proxy Location header
+                    url
+                };
+                
+                debug!("Redirecting client to OAuth start: {}", redirect_url);
                 self.send_http_response(302, vec![("location", &redirect_url), ("content-type", "text/html")], Some(b"<html><body>Redirecting to authentication...</body></html>"));
             }
             AuthAction::Error(error) => {
@@ -159,17 +179,22 @@ impl Context for AuthProxy {
 }
 
 impl HttpContext for AuthProxy {
-    fn on_http_request_headers(&mut self, num_headers: usize, end_of_stream: bool) -> Action {
-        debug!("Processing request headers: count={}, end_of_stream={}", num_headers, end_of_stream);
-        
-        // Skip auth for requests to the auth service itself
-        if self.is_auth_request() {
-            debug!("Skipping auth for auth service request");
-            return Action::Continue;
-        }
+            fn on_http_request_headers(&mut self, num_headers: usize, end_of_stream: bool) -> Action {
+            let method = self.get_http_request_header(":method").unwrap_or("UNKNOWN".to_string());
+            let path = self.get_http_request_header(":path").unwrap_or("UNKNOWN".to_string());
+            let authority = self.get_http_request_header(":authority").unwrap_or("UNKNOWN".to_string());
+            
+            info!("🌐 Incoming request: {} {} (authority: {}, headers: {}, end_of_stream: {})", 
+                  method, path, authority, num_headers, end_of_stream);
 
-        // Forward ALL requests to kube-auth-proxy for authentication decisions
-        debug!("Forwarding request to kube-auth-proxy for authentication check");
+            // Skip auth for requests to the auth service itself
+            if self.is_auth_request() {
+                info!("⏭️  Skipping auth for auth service request: {}", path);
+                return Action::Continue;
+            }
+
+            // Forward ALL requests to kube-auth-proxy for authentication decisions
+            info!("🔐 Forwarding request to kube-auth-proxy for authentication check");
         
         // Parse the auth service endpoint
         let (scheme, host) = match self.http_client.parse_endpoint(&self.config.auth_service.endpoint) {
@@ -186,6 +211,7 @@ impl HttpContext for AuthProxy {
         let original_path = self.get_http_request_header(":path").unwrap_or("/".to_string());
         let original_authority = self.get_http_request_header(":authority").unwrap_or("unknown".to_string());
         let auth_header = self.extract_authorization_header();
+        let cookie_header = self.get_http_request_header("cookie");
         
         // Build headers for auth check call - include original request info
         let mut auth_headers = vec![
@@ -205,25 +231,50 @@ impl HttpContext for AuthProxy {
             auth_headers.push(("authorization", auth_value));
         }
         
-        // Dispatch HTTP call to kube-auth-proxy for authentication check
-        match self.dispatch_http_call(
-            &self.config.auth_service.cluster,
-            auth_headers,
-            None, // No body for GET request
-            vec![], // No trailers
-            Duration::from_millis(self.config.auth_service.timeout)
-        ) {
-            Ok(call_id) => {
-                info!("Auth check dispatched to kube-auth-proxy with call ID: {}", call_id);
-                self.call_id = Some(call_id);
-                Action::Pause
-            }
-            Err(e) => {
-                error!("Failed to dispatch auth call: {:?}", e);
-                self.send_http_response(503, vec![("content-type", "text/plain")], Some(b"Authentication Service Unavailable"));
-                Action::Pause
-            }
+        // Forward cookie header if present (CRITICAL for session-based auth!)
+        if let Some(ref cookie_value) = cookie_header {
+            auth_headers.push(("cookie", cookie_value));
+            debug!("Forwarding cookies to kube-auth-proxy: {}", cookie_value);
         }
+        
+                    // Debug log all dispatch parameters before calling
+            info!("=== DISPATCH DEBUG INFO ===");
+            info!("Cluster: {}", &self.config.auth_service.cluster);
+            info!("Headers count: {}", auth_headers.len());
+            for (i, (key, value)) in auth_headers.iter().enumerate() {
+                info!("  Header[{}]: {} = {}", i, key, value);
+            }
+            info!("Timeout: {} ms", self.config.auth_service.timeout);
+            info!("==========================");
+
+            // Clone headers for error logging (since dispatch_http_call moves them)
+            let headers_debug: Vec<(String, String)> = auth_headers.iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+
+            // Dispatch HTTP call to kube-auth-proxy for authentication check
+            match self.dispatch_http_call(
+                &self.config.auth_service.cluster,
+                auth_headers,
+                None, // No body for GET request
+                vec![], // No trailers
+                Duration::from_millis(self.config.auth_service.timeout)
+            ) {
+                Ok(call_id) => {
+                    info!("✅ Auth check dispatched successfully to kube-auth-proxy with call ID: {}", call_id);
+                    self.call_id = Some(call_id);
+                    Action::Pause
+                }
+                Err(e) => {
+                    error!("❌ Failed to dispatch auth call to cluster '{}': {:?}", &self.config.auth_service.cluster, e);
+                    error!("   Headers that were sent:");
+                    for (i, (key, value)) in headers_debug.iter().enumerate() {
+                        error!("     Header[{}]: {} = {}", i, key, value);
+                    }
+                    self.send_http_response(503, vec![("content-type", "text/plain")], Some(b"Authentication Service Unavailable"));
+                    Action::Pause
+                }
+            }
     }
 }
 

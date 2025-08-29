@@ -16,9 +16,9 @@ spec:
   url: oci://registry.tannerjc.net/gateway-auth-wasm-plugin:latest
   pluginConfig:
     auth_service:
-      endpoint: "http://kube-auth-proxy.openshift-ingress.svc.cluster.local:8080"
-      cluster: "outbound|8080||kube-auth-proxy.openshift-ingress.svc.cluster.local"
-      verify_path: "/auth"
+      endpoint: "http://kube-auth-proxy.openshift-ingress.svc.cluster.local:4180"
+      cluster: "outbound|4180||kube-auth-proxy.openshift-ingress.svc.cluster.local"
+      verify_path: "/oauth2/auth"
       timeout: 5000
       tls:
         verify_cert: false

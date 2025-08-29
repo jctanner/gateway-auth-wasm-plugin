@@ -27,16 +27,21 @@ impl ResponseHandler {
         debug!("Processing auth response with status: {}", status);
         
         match status {
-            "202" => {
-                // Accepted - kube-auth-proxy returns this for authenticated requests
+            "200" => {
+                // OK - kube-auth-proxy returns this for authenticated requests (ext_authz standard)
                 // This is the expected response for successful authentication
+                info!("Authentication successful (200 OK)");
+                AuthAction::Allow
+            }
+            "202" => {
+                // Accepted - also accept this as successful authentication (fallback)
                 info!("Authentication successful (202 Accepted)");
                 AuthAction::Allow
             }
             "401" => {
-                // Unauthorized - authentication required
-                warn!("Authentication required (401 Unauthorized)");
-                AuthAction::Deny(401, "Authentication required".to_string())
+                // Unauthorized - need to redirect to OAuth start endpoint
+                info!("No authentication found (401) - redirecting to OAuth start");
+                AuthAction::Redirect("/oauth2/start".to_string())
             }
             "403" => {
                 // For kube-auth-proxy, 403 means "redirect to login" - forward the response

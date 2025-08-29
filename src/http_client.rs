@@ -28,13 +28,21 @@ impl HttpClient {
                 log::warn!("Using insecure HTTP for auth service communication");
             }
             
+            // For cluster-based dispatch, strip the port from the authority
+            // Envoy cluster handles the port mapping
+            let host_without_port = if let Some(colon_pos) = host_part.find(':') {
+                &host_part[..colon_pos]
+            } else {
+                &host_part
+            };
+            
             // Validate host part is not empty
-            if host_part.is_empty() {
+            if host_without_port.is_empty() {
                 return Err("Host part cannot be empty".to_string());
             }
             
-            debug!("Parsed endpoint - scheme: {}, host: {}", scheme, host_part);
-            Ok((scheme, host_part))
+            debug!("Parsed endpoint - scheme: {}, host: {} (original: {})", scheme, host_without_port, host_part);
+            Ok((scheme, host_without_port.to_string()))
         } else {
             error!("Invalid endpoint format: missing scheme");
             Err("Invalid endpoint format: must include scheme (https://)".to_string())
