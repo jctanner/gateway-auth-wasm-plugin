@@ -125,9 +125,7 @@ spec:
 ## Compatibility
 
 ### OpenShift Versions
-- **OpenShift 4.19** - Primary development and testing platform
-- **OpenShift 4.18** - Compatible
-- **OpenShift 4.20** - Validation in progress
+- **OpenShift 4.19** - Developed and tested on this version
 
 ### Authentication Providers  
 - **OpenShift OAuth** - Native OpenShift authentication
