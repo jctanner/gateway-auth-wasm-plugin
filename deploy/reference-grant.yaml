@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-echo-to-kube-auth-proxy
+  namespace: openshift-ingress  # Grant must be in the target namespace (where kube-auth-proxy is)
+spec:
+  # Allow HTTPRoutes from echo-service namespace
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: echo-service
+  # To access Services in this namespace (openshift-ingress)
+  to:
+  - group: ""
+    kind: Service
+    name: kube-auth-proxy  # Specifically allow access to kube-auth-proxy service

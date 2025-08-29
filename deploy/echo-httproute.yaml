@@ -1,0 +1,27 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo-route
+  namespace: echo-service
+spec:
+  parentRefs:
+  - name: odh-gateway
+    namespace: openshift-ingress
+  rules:
+  # First rule: OAuth paths go to kube-auth-proxy (higher priority - evaluated first)
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /oauth2/
+    backendRefs:
+    - name: kube-auth-proxy
+      namespace: openshift-ingress  # kube-auth-proxy is in openshift-ingress
+      port: 4180
+  # Second rule: Everything else goes to echo-service (fallback)
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: echo-service
+      port: 80
