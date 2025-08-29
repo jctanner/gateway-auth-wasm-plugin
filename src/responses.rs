@@ -27,11 +27,6 @@ impl ResponseHandler {
         debug!("Processing auth response with status: {}", status);
         
         match status {
-            "200" => {
-                // Standard OK response (rare for auth-only mode)
-                info!("Auth service returned 200 OK");
-                AuthAction::Allow
-            }
             "202" => {
                 // Accepted - kube-auth-proxy returns this for authenticated requests
                 // This is the expected response for successful authentication
@@ -44,9 +39,9 @@ impl ResponseHandler {
                 AuthAction::Deny(401, "Authentication required".to_string())
             }
             "403" => {
-                // Forbidden - user authenticated but not authorized
-                warn!("Access denied - insufficient permissions (403 Forbidden)");
-                AuthAction::Deny(403, "Access denied".to_string())
+                // For kube-auth-proxy, 403 means "redirect to login" - forward the response
+                info!("kube-auth-proxy returning sign-in page (403)");
+                AuthAction::Redirect("sign-in-page".to_string()) // Will forward the actual response content
             }
             "302" => {
                 // Found - redirect to authentication provider

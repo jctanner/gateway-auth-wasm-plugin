@@ -24,6 +24,8 @@ impl Default for PluginConfig {
 pub struct AuthServiceConfig {
     /// kube-auth-proxy service endpoint (e.g., "https://kube-auth-proxy.auth-system.svc.cluster.local:4180")
     pub endpoint: String,
+    /// Envoy cluster name for the auth service (e.g., "outbound|4180||kube-auth-proxy.auth-system.svc.cluster.local")
+    pub cluster: String,
     /// Auth verification path (typically "/auth")
     pub verify_path: String,
     /// Request timeout in milliseconds
@@ -36,6 +38,7 @@ impl Default for AuthServiceConfig {
     fn default() -> Self {
         Self {
             endpoint: "https://kube-auth-proxy.auth-system.svc.cluster.local:4180".to_string(),
+            cluster: "outbound|4180||kube-auth-proxy.auth-system.svc.cluster.local".to_string(),
             verify_path: "/auth".to_string(),
             timeout: 5000, // 5 seconds
             tls: TlsConfig::default(),

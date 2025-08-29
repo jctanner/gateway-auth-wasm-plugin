@@ -4,7 +4,7 @@
 #
 # Build Stage - Rust compilation
 #
-FROM rust:1.75-slim as builder
+FROM rustlang/rust:nightly as builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
@@ -44,6 +44,9 @@ RUN ls -la target/wasm32-unknown-unknown/release/ && \
 # Runtime Stage - Minimal image with just the WASM binary
 #
 FROM scratch as runtime
+
+# Red Hat Service Mesh compatibility label
+LABEL module.wasm.image/variant=compat
 
 # Copy the WASM binary to the root of the image
 COPY --from=builder /build/target/wasm32-unknown-unknown/release/byoidc_wasm_plugin.wasm /plugin.wasm

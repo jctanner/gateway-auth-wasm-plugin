@@ -6,7 +6,7 @@ PLUGIN_NAME := gateway-auth-wasm-plugin
 VERSION ?= latest
 REGISTRY ?= registry.tannerjc.net
 IMAGE_NAME := $(REGISTRY)/$(PLUGIN_NAME)
-RUST_IMAGE := rust:1.75
+RUST_IMAGE := rustlang/rust:nightly
 
 # Docker build arguments
 DOCKER_BUILDKIT := 1
@@ -44,6 +44,16 @@ test: ## Run unit tests
 .PHONY: build-wasm
 build-wasm: ## Build WASM binary directly
 	@echo "🔨 Building WASM binary..."
+	@docker run --rm \
+		-v $(shell pwd):/app$(SELINUX_MOUNT) \
+		-w /app \
+		$(RUST_IMAGE) \
+		sh -c "rustup target add wasm32-unknown-unknown && cargo install wasm-pack && wasm-pack build --target web --out-dir pkg"
+	@echo "✅ WASM binary built with wasm-pack"
+
+.PHONY: build-wasm-cargo
+build-wasm-cargo: ## Build WASM binary with cargo (fallback)
+	@echo "🔨 Building WASM binary with cargo..."
 	@docker run --rm \
 		-v $(shell pwd):/app$(SELINUX_MOUNT) \
 		-w /app \
@@ -127,13 +137,13 @@ pull: ## Pull image from registry
 .PHONY: deploy
 deploy: ## Deploy WASM plugin to cluster (requires oc login)
 	@echo "🚀 Deploying WASM plugin to cluster..."
-	@cd deploy && ./deploy.sh
+	@oc apply -f deploy/wasmplugin-production.yaml
+	@echo "✅ WASM plugin deployed"
 
 .PHONY: undeploy
 undeploy: ## Remove WASM plugin from cluster
 	@echo "🗑️  Removing WASM plugin from cluster..."
-	@oc delete wasmplugin gateway-auth-wasm-plugin -n openshift-ingress --ignore-not-found=true
-	@oc delete wasmplugin gateway-auth-wasm-plugin-alt -n openshift-ingress --ignore-not-found=true
+	@oc delete -f deploy/wasmplugin-production.yaml --ignore-not-found=true
 	@echo "✅ WASM plugin removed"
 
 .PHONY: status
